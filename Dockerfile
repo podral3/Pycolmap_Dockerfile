@@ -60,7 +60,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTH
     update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1
 
 # Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
+RUN python3 -m pip install --ignore-installed --upgrade pip setuptools wheel
 
 # Build and install COLMAP
 RUN git clone https://github.com/colmap/colmap.git /colmap_src

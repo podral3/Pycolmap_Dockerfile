@@ -9,7 +9,7 @@ CUDA-enabled PyCOLMAP built on the official [COLMAP repository](https://github.c
 ```bash
 docker run --rm \
   --gpus all \
-  -v "/app:/app" \
+  -v "$(pwd):/app" \
   -w /app \
   podral3/pycolmap:latest \
   python3 main.py

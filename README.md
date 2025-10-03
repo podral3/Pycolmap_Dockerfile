@@ -1,17 +1,23 @@
-# PyCOLMAP Dockerfile
+# PyCOLMAP Docker Image
 
-This file extends Dockerfile in orginal COLMAP repository https://github.com/colmap/colmap to have cuda enabled pycolmap.
-Use this to run python colmap scripts.
+CUDA-enabled PyCOLMAP built on the official [COLMAP repository](https://github.com/colmap/colmap). Run Python COLMAP scripts with GPU acceleration.
 
-Image avilable at: https://hub.docker.com/r/podral3/pycolmap
+**Docker Hub:** https://hub.docker.com/r/podral3/pycolmap
 
-Running a simple script
+## Quick Start
 
-```
+```bash
 docker run --rm \
---name pycolmap \
---gpus all \
--v "/app:/app" \
--w /app podral3/pycolmap:latest \
-python3 main.py
+  --gpus all \
+  -v "/app:/app" \
+  -w /app \
+  podral3/pycolmap:latest \
+  python3 main.py
+```
+
+## Extending with Dependencies
+
+```dockerfile
+FROM podral3/pycolmap:latest
+RUN pip install numpy scipy
 ```

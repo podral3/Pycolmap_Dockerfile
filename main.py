@@ -19,15 +19,12 @@ print(f"Database created at: {db_path}")
 
 camera = camera_from_json("camera.json")
 reader_options = get_imageReaderOptions(camera, "masks")
-siftOptions = pycolmap.SiftExtractionOptions()
-siftOptions.num_threads = 1
 # Extract features from images
 if image_dir.exists():
     pycolmap.extract_features(database_path=str(db_path),
                                image_path=str(image_dir),
                                camera_mode=pycolmap.CameraMode.SINGLE,
                                camera_model="PINHOLE",
-                               sift_options= siftOptions,
                                reader_options= reader_options)
     pycolmap.match_exhaustive(str(db_path))
     maps = pycolmap.incremental_mapping(str(db_path), 

@@ -13,6 +13,7 @@ def camera_from_json(path) -> pycolmap.Camera:
 
 def get_imageReaderOptions(camera: pycolmap.Camera, mask_path):
     imageReaderOptions = pycolmap.ImageReaderOptions()
+    imageReaderOptions.camera_model = "PINHOLE"
     imageReaderOptions.camera_params = camera.params_to_string()
     imageReaderOptions.mask_path = mask_path
     return imageReaderOptions

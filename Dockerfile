@@ -3,7 +3,7 @@ ARG NVIDIA_CUDA_VERSION=11.2.2
 
 # Builder stage
 FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS builder
-ARG COLMAP_GIT_COMMIT=main
+ARG COLMAP_GIT_COMMIT=3.10
 ARG CUDA_ARCHITECTURES=all-major
 ENV QT_XCB_GL_INTEGRATION=xcb_egl
 ENV DEBIAN_FRONTEND=noninteractive
@@ -12,28 +12,30 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y \
         git \
-        cmake \
         ninja-build \
         build-essential \
+        wget \
+        unzip \
         libboost-program-options-dev \
+        libboost-filesystem-dev \
         libboost-graph-dev \
         libboost-system-dev \
         libeigen3-dev \
         libfreeimage-dev \
         libmetis-dev \
+        libflann-dev \
         libgoogle-glog-dev \
         libgtest-dev \
         libgmock-dev \
         libsqlite3-dev \
         libglew-dev \
-        qt6-base-dev \
-        libqt6opengl6-dev \
-        libqt6openglwidgets6 \
+        qtbase5-dev \
+        libqt5opengl5-dev \
         libcgal-dev \
-        libceres-dev \
         libcurl4-openssl-dev \
         libssl-dev \
-        libmkl-full-dev \
+        libatlas-base-dev \
+        libsuitesparse-dev \
         python3 \
         python3-pip \
         python3-dev \
@@ -43,9 +45,42 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Install newer CMake (3.16 doesn't support CUDA17 dialect)
+RUN wget -O cmake.sh https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-linux-x86_64.sh && \
+    chmod +x cmake.sh && \
+    ./cmake.sh --skip-license --prefix=/usr/local && \
+    rm cmake.sh
+
 # Configure git for better SSL handling
 RUN git config --global http.sslVerify true && \
     git config --global http.postBuffer 524288000
+
+# Build and install Ceres Solver (compatible with COLMAP 3.10)
+RUN git clone https://github.com/ceres-solver/ceres-solver.git && \
+    cd ceres-solver && \
+    git checkout 2.2.0 && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_EXAMPLES=OFF && \
+    ninja install && \
+    # Replace FindGlog.cmake with a version that checks for existing target \
+    echo 'if(NOT TARGET glog::glog)' > /tmp/patch.cmake && \
+    cat /usr/local/lib/cmake/Ceres/FindGlog.cmake >> /tmp/patch.cmake && \
+    echo 'endif()' >> /tmp/patch.cmake && \
+    mv /tmp/patch.cmake /usr/local/lib/cmake/Ceres/FindGlog.cmake && \
+    cd ../.. && \
+    rm -rf ceres-solver
+
+# Pre-download PoseLib to avoid SSL issues during CMake fetch
+RUN wget https://github.com/PoseLib/PoseLib/archive/f119951fca625133112acde48daffa5f20eba451.zip -O /tmp/poselib.zip && \
+    mkdir -p /tmp/poselib && \
+    cd /tmp/poselib && \
+    unzip /tmp/poselib.zip
 
 # Clone COLMAP
 RUN git clone https://github.com/colmap/colmap.git
@@ -60,8 +95,8 @@ RUN cd colmap && \
         -GNinja \
         -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES} \
         -DCMAKE_INSTALL_PREFIX=/colmap-install \
-        -DBLA_VENDOR=Intel10_64lp \
-        -DFETCHCONTENT_QUIET=OFF && \
+        -DFETCHCONTENT_QUIET=OFF \
+        -DFETCHCONTENT_SOURCE_DIR_POSELIB=/tmp/poselib/PoseLib-f119951fca625133112acde48daffa5f20eba451 && \
     ninja install -j4
 
 # Build PyColmap (from the same COLMAP source directory)
@@ -71,8 +106,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN cd colmap && \
     pip install --upgrade pip && \
-    git config --global http.sslVerify true && \
-    CMAKE_PREFIX_PATH=/colmap-install pip install . --verbose
+    pip install scikit-build-core pybind11 numpy && \
+    CMAKE_PREFIX_PATH=/colmap-install pip install --verbose ./pycolmap
 
 # Runtime stage
 FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
@@ -82,31 +117,38 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install runtime dependencies including Python
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        libboost-program-options1.83.0 \
+        libboost-program-options1.71.0 \
+        libboost-filesystem1.71.0 \
         libc6 \
         libomp5 \
         libopengl0 \
         libmetis5 \
-        libceres4t64 \
         libfreeimage3 \
+        libflann1.9 \
         libgcc-s1 \
         libgl1 \
-        libglew2.2 \
-        libgoogle-glog0v6t64 \
-        libqt6core6 \
-        libqt6gui6 \
-        libqt6widgets6 \
-        libqt6openglwidgets6 \
+        libglew2.1 \
+        libgoogle-glog0v5 \
+        libqt5core5a \
+        libqt5gui5 \
+        libqt5widgets5 \
+        libqt5opengl5 \
         libcurl4 \
-        libssl3t64 \
-        libmkl-locale \
-        libmkl-intel-lp64 \
-        libmkl-intel-thread \
-        libmkl-core \
+        libssl1.1 \
+        libatlas3-base \
+        libsuitesparseconfig5 \
+        libcholmod3 \
+        libcxsparse3 \
+        libspqr2 \
         python3 \
         python3-pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Copy Ceres installation from builder
+COPY --from=builder /usr/local/lib/libceres* /usr/local/lib/
+COPY --from=builder /usr/local/include/ceres /usr/local/include/ceres
+RUN ldconfig
 
 # Copy COLMAP installation
 COPY --from=builder /colmap-install/ /usr/local/
@@ -122,5 +164,5 @@ ENV VIRTUAL_ENV="/opt/venv"
 WORKDIR /workspace
 
 # Verify installations
-RUN colmap -h > /dev/null 2>&1 && echo "COLMAP installed successfully" && \
+RUN colmap -h && \
     python3 -c "import pycolmap; print(f'PyColmap version: {pycolmap.__version__}')"
